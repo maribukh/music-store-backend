@@ -10,6 +10,7 @@ export type Song = {
   likes: number;
   coverSeed: string;
   review: string;
+  lyrics: string;
 };
 
 type Opts = {
@@ -20,113 +21,67 @@ type Opts = {
   perPage: number;
 };
 
-function hashStringToUInt32(s: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return h >>> 0;
-}
-
-function capitalize(s: string) {
-  return s && s[0].toUpperCase() + s.slice(1);
-}
-
 export function generateSongs(opts: Opts): Song[] {
   const { lang, seed, likes, page, perPage } = opts;
   const locale = lang === "de" ? de : en;
   const faker = new Faker({ locale: [locale, en] });
 
-  const fakerSeed = hashStringToUInt32(`${seed}:${page}`);
-  faker.seed(fakerSeed);
+  const combined = `${seed}:${page}`;
+  const rng = seedrandom(combined);
 
-  const structuralRng = seedrandom(`${seed}:${page}:struct`);
-
-  const avg = Math.max(0, Math.min(10, Number(likes) || 0));
-  const base = Math.floor(avg);
-  const frac = avg - base;
+  function probabilisticLikes(avg: number) {
+    const base = Math.floor(avg);
+    const frac = avg - base;
+    const extra = rng() < frac ? 1 : 0;
+    return base + extra;
+  }
 
   const songs: Song[] = [];
-
   for (let i = 0; i < perPage; i++) {
-    const index = (page - 1) * perPage + i + 1;
+    const idx = (page - 1) * perPage + i + 1;
 
-    const adjective = (() => {
-      try {
-        return faker.word.adjective();
-      } catch {
-        return faker.word.words(1);
-      }
-    })();
-    const noun = (() => {
-      try {
-        return faker.word.noun();
-      } catch {
-        return faker.word.words(1);
-      }
-    })();
+    const adjective = faker.word.adjective();
+    const noun = faker.word.noun();
+    const title = `${
+      adjective.charAt(0).toUpperCase() + adjective.slice(1)
+    } ${noun}`;
 
-    const title = `${capitalize(adjective)} ${capitalize(noun)}`;
+    const artist = rng() < 0.5 ? faker.lorem.words(2) : faker.lorem.words(3);
 
-    const isBand = structuralRng() < 0.4;
-    const artist = isBand
-      ? faker.music && typeof (faker as any).music.band === "function"
-        ? (faker as any).music.band()
-        : faker.person.fullName()
-      : faker.person.fullName();
+    const album = rng() < 0.3 ? "Single" : faker.lorem.words(2);
 
-    const album =
-      structuralRng() < 0.5
-        ? "Single"
-        : (() => {
-            try {
-              return faker.word.words({ count: 2 });
-            } catch {
-              return faker.word.words(2);
-            }
-          })();
+    const genre = faker.word.noun();
 
-    const genre = (() => {
-      try {
-        return faker.music
-          ? faker.music.genre
-            ? faker.music.genre()
-            : faker.word.noun()
-          : faker.word.noun();
-      } catch {
-        return faker.word.noun();
-      }
-    })();
+    const review = faker.lorem.sentences(2);
 
-    const review = (() => {
-      try {
-        return faker.lorem.sentences(2);
-      } catch {
-        return faker.lorem.sentence();
-      }
-    })();
+    const coverSeed = `${seed}:${page}:${idx}`;
 
-    let likeCount: number;
-    if (avg === 10) {
-      likeCount = 10;
-    } else if (avg === 0) {
-      likeCount = 0;
-    } else {
-      const perSongRng = seedrandom(`${seed}:${page}:likes:${index}:${avg}`);
-      likeCount = base + (perSongRng() < frac ? 1 : 0);
-      likeCount = Math.max(0, Math.min(10, Math.floor(likeCount)));
-    }
+    const lyricsRng = seedrandom(`${coverSeed}:lyrics`);
+    const lyricLines = faker.lorem
+      .lines(Math.floor(lyricsRng() * 5) + 4)
+      .split("\n");
+    let currentTime = 0;
+    const lyricsWithTimestamps = lyricLines
+      .map((line) => {
+        currentTime += lyricsRng() * 3 + 2;
+        const minutes = Math.floor(currentTime / 60)
+          .toString()
+          .padStart(2, "0");
+        const seconds = (currentTime % 60).toFixed(2).padStart(5, "0");
+        return `[${minutes}:${seconds}] ${line}`;
+      })
+      .join("\n");
 
     songs.push({
-      index,
-      title,
-      artist,
-      album,
-      genre,
-      likes: likeCount,
-      coverSeed: `${seed}:${index}`,
+      index: idx,
+      title: title,
+      artist: artist,
+      album: album,
+      genre: genre,
+      likes: probabilisticLikes(likes),
+      coverSeed: coverSeed,
       review,
+      lyrics: lyricsWithTimestamps,
     });
   }
 
@@ -134,28 +89,73 @@ export function generateSongs(opts: Opts): Song[] {
 }
 
 export async function generateAudioBuffer(seed: string): Promise<Buffer> {
+  const faker = new Faker({ locale: [en] });
+  const lyricsRng = seedrandom(`${seed}:lyrics`);
+  faker.seed(lyricsRng.int32());
+
+  const lyricLines = faker.lorem
+    .lines(Math.floor(lyricsRng() * 5) + 4)
+    .split("\n");
+  let currentTime = 0;
+  const lyricsWithTimestamps = lyricLines
+    .map((line) => {
+      currentTime += lyricsRng() * 3 + 2;
+      const minutes = Math.floor(currentTime / 60)
+        .toString()
+        .padStart(2, "0");
+      const seconds = (currentTime % 60).toFixed(2).padStart(5, "0");
+      return `[${minutes}:${seconds}] ${line}`;
+    })
+    .join("\n");
+
+  const parsedLyrics = lyricsWithTimestamps
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/\[(\d{2}):(\d{2}\.\d{2})\](.*)/);
+      if (!match) return null;
+      const [, minutes, seconds] = match;
+      return parseInt(minutes, 10) * 60 + parseFloat(seconds);
+    })
+    .filter((time): time is number => time !== null);
+
+  const totalDuration =
+    parsedLyrics.length > 0 ? parsedLyrics[parsedLyrics.length - 1] + 3 : 5;
+
   const rng = seedrandom(seed);
   const sampleRate = 44100;
-  const noteDuration = 0.45;
-  const notesCount = 6;
-  const totalSamples = Math.floor(sampleRate * noteDuration * notesCount);
+  const totalSamples = Math.floor(sampleRate * totalDuration);
   const dataLen = totalSamples * 2;
   const dataBuf = Buffer.alloc(dataLen);
 
   const scale = [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88];
 
-  let sampleIndex = 0;
-  for (let n = 0; n < notesCount; n++) {
-    const freq = scale[Math.floor(rng() * scale.length)];
-    const samplesForNote = Math.floor(sampleRate * noteDuration);
-    for (let i = 0; i < samplesForNote; i++) {
-      const t = i / sampleRate;
-      const amp =
-        Math.sin(2 * Math.PI * freq * t) * (0.25 * (1 - i / samplesForNote));
-      const intSample = Math.max(-1, Math.min(1, amp)) * 32767;
-      dataBuf.writeInt16LE(Math.floor(intSample), sampleIndex);
-      sampleIndex += 2;
+  const melodyPattern = [
+    scale[Math.floor(rng() * scale.length)],
+    scale[Math.floor(rng() * scale.length)],
+    scale[Math.floor(rng() * scale.length)],
+    scale[Math.floor(rng() * scale.length)],
+  ];
+
+  let melodyNoteIndex = 0;
+  const noteDuration = 0.3;
+  let samplesUntilNextNote = 0;
+  let currentFreq = melodyPattern[0];
+
+  for (let i = 0; i < totalSamples; i++) {
+    if (samplesUntilNextNote <= 0) {
+      currentFreq = melodyPattern[melodyNoteIndex % melodyPattern.length];
+      melodyNoteIndex++;
+      samplesUntilNextNote = Math.floor(sampleRate * noteDuration);
     }
+    samplesUntilNextNote--;
+
+    const noteTime =
+      (sampleRate * noteDuration - samplesUntilNextNote) / sampleRate;
+    const fadeOut = 1 - noteTime / noteDuration;
+    const amp =
+      Math.sin(2 * Math.PI * currentFreq * (i / sampleRate)) * 0.2 * fadeOut;
+    const intSample = Math.max(-1, Math.min(1, amp)) * 32767;
+    dataBuf.writeInt16LE(Math.floor(intSample), i * 2);
   }
 
   const header = Buffer.alloc(44);
