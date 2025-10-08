@@ -3,17 +3,17 @@ import { generateAudioBuffer } from "../utils/generateSongs";
 
 export async function getSongPreviewHandler(req: Request, res: Response) {
   try {
-    const seed = req.params.seed as string;
-    if (!seed) {
-      return res.status(400).json({ error: "Seed is required" });
-    }
-
+    const seed = req.params.seed.replace(/-/g, ":"); 
     const audioBuffer = await generateAudioBuffer(seed);
 
-    res.set("Content-Type", "audio/wav");
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="preview-${seed}.wav"`
+    );
     res.send(audioBuffer);
-  } catch (err) {
-    console.error("ERROR ON MUSIC GENERATION:", err);
-    res.status(500).json({ error: "Server error during music generation" });
+  } catch (error) {
+    console.error("❌ Error of generation:", error);
+    res.status(500).send("Error generating audio");
   }
 }
