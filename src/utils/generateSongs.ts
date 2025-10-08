@@ -88,38 +88,27 @@ export function generateSongs(opts: Opts): Song[] {
   return songs;
 }
 
-export async function generateAudioBuffer(seed: string, lyrics: string): Promise<Buffer> {
-  const faker = new Faker({ locale: [en] });
-  const lyricsRng = seedrandom(`${seed}:lyrics`);
-  faker.seed(lyricsRng.int32());
+export async function generateAudioBuffer(
+  seed: string,
+  lyrics?: string
+): Promise<Buffer> {
+  let totalDuration = 5;
 
-  const lyricLines = faker.lorem
-    .lines(Math.floor(lyricsRng() * 5) + 4)
-    .split("\n");
-  let currentTime = 0;
-  const lyricsWithTimestamps = lyricLines
-    .map((line) => {
-      currentTime += lyricsRng() * 3 + 2;
-      const minutes = Math.floor(currentTime / 60)
-        .toString()
-        .padStart(2, "0");
-      const seconds = (currentTime % 60).toFixed(2).padStart(5, "0");
-      return `[${minutes}:${seconds}] ${line}`;
-    })
-    .join("\n");
+  if (lyrics) {
+    const parsedLyrics = lyrics
+      .split("\n")
+      .map((line) => {
+        const match = line.match(/\[(\d{2}):(\d{2}\.\d{2})\](.*)/);
+        if (!match) return null;
+        const [, minutes, seconds] = match;
+        return parseInt(minutes, 10) * 60 + parseFloat(seconds);
+      })
+      .filter((time): time is number => time !== null);
 
-  const parsedLyrics = lyricsWithTimestamps
-    .split("\n")
-    .map((line) => {
-      const match = line.match(/\[(\d{2}):(\d{2}\.\d{2})\](.*)/);
-      if (!match) return null;
-      const [, minutes, seconds] = match;
-      return parseInt(minutes, 10) * 60 + parseFloat(seconds);
-    })
-    .filter((time): time is number => time !== null);
-
-  const totalDuration =
-    parsedLyrics.length > 0 ? parsedLyrics[parsedLyrics.length - 1] + 3 : 5;
+    if (parsedLyrics.length > 0) {
+      totalDuration = parsedLyrics[parsedLyrics.length - 1] + 3;
+    }
+  }
 
   const rng = seedrandom(seed);
   const sampleRate = 44100;
