@@ -1,4 +1,3 @@
-// backend/src/routes/songPreview.ts
 import { Request, Response } from "express";
 import { generateAudioBuffer } from "../utils/generateSongs";
 

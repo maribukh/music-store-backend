@@ -1,4 +1,3 @@
-// backend/src/routes/songs.ts
 import { Request, Response } from "express";
 import { generateSongs } from "../utils/generateSongs";
 
