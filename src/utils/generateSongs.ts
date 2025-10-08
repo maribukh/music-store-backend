@@ -88,7 +88,7 @@ export function generateSongs(opts: Opts): Song[] {
   return songs;
 }
 
-export async function generateAudioBuffer(seed: string): Promise<Buffer> {
+export async function generateAudioBuffer(seed: string, lyrics: string): Promise<Buffer> {
   const faker = new Faker({ locale: [en] });
   const lyricsRng = seedrandom(`${seed}:lyrics`);
   faker.seed(lyricsRng.int32());

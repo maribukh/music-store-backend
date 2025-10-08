@@ -28,7 +28,10 @@ export async function getExportHandler(req: Request, res: Response) {
     archive.pipe(res);
 
     for (const song of songs) {
-      const audioBuffer = await generateAudioBuffer(song.coverSeed);
+      const audioBuffer = await generateAudioBuffer(
+        song.coverSeed,
+        song.lyrics
+      );
       const fileName = `${song.artist} - ${song.title}.wav`.replace(
         /[\\/:*?"<>|]/g,
         ""
